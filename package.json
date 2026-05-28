@@ -1,0 +1,22 @@
+{
+  "name": "puter-worker-deploy-action",
+  "version": "1.0.0",
+  "description": "GitHub Action for uploading a worker's source to Puter FS and deploying a Puter Worker.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "check": "node --check src/deploy.mjs",
+    "build": "esbuild src/deploy.mjs --bundle --platform=node --format=cjs --target=node24 --outfile=dist/index.cjs",
+    "build:clean": "rm -rf dist && npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@heyputer/puter.js": "latest"
+  }
+}

@@ -1,0 +1,42 @@
+name: "Puter Worker Deploy"
+description: "Upload a worker's source from a repository path to Puter FS and deploy/update a Puter Worker."
+author: "Puter"
+
+inputs:
+  worker_name:
+    description: "Worker name to deploy (e.g. my-api or my-api.puter.work)."
+    required: true
+  puter_path:
+    description: "Destination directory path in Puter FS for the worker source."
+    required: true
+  puter_token:
+    description: "Puter auth token. Pass from GitHub secrets."
+    required: true
+  source_path:
+    description: "Local path in the checked out repository to deploy."
+    required: false
+    default: "."
+  entry_file:
+    description: "Worker entry file, relative to source_path (ignored when source_path is a single file)."
+    required: false
+    default: "index.js"
+  include_hidden:
+    description: "Whether to include hidden files/directories (dotfiles)."
+    required: false
+    default: "false"
+  concurrency:
+    description: "Number of concurrent uploads."
+    required: false
+    default: "8"
+
+outputs:
+  deployed_files:
+    description: "Total files uploaded."
+  worker_url:
+    description: "Resolved worker URL."
+  deploy_action:
+    description: "Worker deploy result: created or updated."
+
+runs:
+  using: "node24"
+  main: "dist/index.cjs"
