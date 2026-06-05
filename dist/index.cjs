@@ -29393,22 +29393,38 @@ async function withConcurrency(items, limit, worker) {
   await Promise.all(runners);
 }
 async function deployWorker(puter2, workerName, entryPuterPath) {
-  let existed = false;
+  let existing = null;
   try {
-    const current = await puter2.workers.get(workerName);
-    existed = Boolean(current);
+    existing = await puter2.workers.get(workerName);
   } catch (error) {
     if (!isNotFoundError(error)) {
       throw error;
     }
   }
+  if (existing) {
+    return { action: "updated", result: existing };
+  }
   const result = await puter2.workers.create(workerName, entryPuterPath);
   if (!result?.success && !result?.url) {
     throw new Error(`Worker deployment failed: ${safeJSON(result)}`);
   }
-  return { action: existed ? "updated" : "created", result };
+  return { action: "created", result };
+}
+function patchHeadersContentType() {
+  if (typeof Headers === "undefined") return;
+  if (Headers.prototype.__puterContentTypePatched) return;
+  const original = Headers.prototype.get;
+  Headers.prototype.get = function(name) {
+    const value = original.call(this, name);
+    if (value === null && String(name).toLowerCase() === "content-type") {
+      return "";
+    }
+    return value;
+  };
+  Headers.prototype.__puterContentTypePatched = true;
 }
 function initPuterFromBundle(token) {
+  patchHeadersContentType();
   const puter2 = globalThis.puter;
   if (!puter2 || typeof puter2.setAuthToken !== "function") {
     throw new Error("Failed to initialize Puter SDK from bundled runtime.");
@@ -29482,10 +29498,21 @@ async function run() {
   core.info(`Deploy action: ${deployment.action}`);
   core.info(`Worker URL: ${workerURL}`);
 }
-run().catch((error) => {
-  const message = formatError(error);
-  core.setFailed(message);
-});
+function flushAndExit(code) {
+  let pending = 2;
+  const done = () => {
+    if (--pending === 0) process.exit(code);
+  };
+  process.stdout.write("", done);
+  process.stderr.write("", done);
+}
+run().then(
+  () => flushAndExit(0),
+  (error) => {
+    core.setFailed(formatError(error));
+    flushAndExit(1);
+  }
+);
 /*! Bundled license information:
 
 undici/lib/fetch/body.js:
