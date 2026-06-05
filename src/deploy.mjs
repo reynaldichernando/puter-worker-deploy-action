@@ -240,14 +240,20 @@ async function withConcurrency(items, limit, worker) {
 }
 
 async function deployWorker(puter, workerName, entryPuterPath) {
-    let existed = false;
+    // Get-first: does the worker already exist? Swallow not-found to null.
+    let existing = null;
     try {
-        const current = await puter.workers.get(workerName);
-        existed = Boolean(current);
+        existing = await puter.workers.get(workerName);
     } catch (error) {
         if (!isNotFoundError(error)) {
             throw error;
         }
+    }
+
+    // Register only when new. For an existing worker the in-place file
+    // overwrite (done before this) is enough — re-creating would be redundant.
+    if (existing) {
+        return { action: "updated", result: existing };
     }
 
     const result = await puter.workers.create(workerName, entryPuterPath);
@@ -255,10 +261,32 @@ async function deployWorker(puter, workerName, entryPuterPath) {
         throw new Error(`Worker deployment failed: ${safeJSON(result)}`);
     }
 
-    return { action: existed ? "updated" : "created", result };
+    return { action: "created", result };
+}
+
+// The bundled Puter SDK's XHR/fetch shim calls
+// `resp.headers.get('content-type').includes(...)` with no null-guard, which
+// throws when a response omits Content-Type — exactly what the signed-URL PUT
+// uploads (the fast, parallel signed-batch-write path) return. Patch the global
+// Headers.get so a missing content-type reads as '' instead of null; this keeps
+// the fast upload path working. Idempotent. Remove once the SDK null-guards it.
+function patchHeadersContentType() {
+    if (typeof Headers === "undefined") return;
+    if (Headers.prototype.__puterContentTypePatched) return;
+    const original = Headers.prototype.get;
+    Headers.prototype.get = function (name) {
+        const value = original.call(this, name);
+        if (value === null && String(name).toLowerCase() === "content-type") {
+            return "";
+        }
+        return value;
+    };
+    Headers.prototype.__puterContentTypePatched = true;
 }
 
 function initPuterFromBundle(token) {
+    patchHeadersContentType();
+
     const puter = globalThis.puter;
     if (!puter || typeof puter.setAuthToken !== "function") {
         throw new Error("Failed to initialize Puter SDK from bundled runtime.");
@@ -348,7 +376,23 @@ async function run() {
     core.info(`Worker URL: ${workerURL}`);
 }
 
-run().catch((error) => {
-    const message = formatError(error);
-    core.setFailed(message);
-});
+// The Puter SDK holds an open connection that keeps the event loop alive, so
+// the action won't exit on its own once the deploy finishes. Force an exit
+// after flushing both streams (writing '' invokes the callback once pending
+// output has drained), so logs and `core` output are never truncated.
+function flushAndExit(code) {
+    let pending = 2;
+    const done = () => {
+        if (--pending === 0) process.exit(code);
+    };
+    process.stdout.write("", done);
+    process.stderr.write("", done);
+}
+
+run().then(
+    () => flushAndExit(0),
+    (error) => {
+        core.setFailed(formatError(error));
+        flushAndExit(1);
+    },
+);
