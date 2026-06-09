@@ -29430,6 +29430,7 @@ function initPuterFromBundle(token) {
     throw new Error("Failed to initialize Puter SDK from bundled runtime.");
   }
   puter2.setAuthToken(token);
+  core.info(`Puter env: ${puter2.env}`);
   return puter2;
 }
 async function run() {

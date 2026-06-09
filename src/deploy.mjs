@@ -293,6 +293,7 @@ function initPuterFromBundle(token) {
     }
 
     puter.setAuthToken(token);
+    core.info(`Puter env: ${puter.env}`);
     return puter;
 }
 
